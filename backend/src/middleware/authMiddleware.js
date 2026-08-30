@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken';
-import mongoose from 'mongoose';
-import { User } from '../models/User.js';
+import { supabase } from '../config/supabase.js';
 import { memoryStore } from '../config/memoryStore.js';
 
 export const protect = async (req, res, next) => {
@@ -18,12 +17,31 @@ export const protect = async (req, res, next) => {
       );
 
       let user = null;
-      if (mongoose.connection.readyState === 1) {
-        user = await User.findById(decoded.id).select('-password');
+
+      // Query Supabase users table
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, email, college, year, monthly_budget, avatar, currency')
+        .eq('id', decoded.id)
+        .maybeSingle();
+
+      if (data && !error) {
+        user = {
+          _id: data.id,
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          college: data.college,
+          year: data.year,
+          monthlyBudget: Number(data.monthly_budget) || 10000,
+          avatar: data.avatar,
+          currency: data.currency
+        };
       } else {
-        const found = memoryStore.users.find(u => u._id.toString() === decoded.id.toString());
+        // Fallback to memory store if any
+        const found = memoryStore.users.find(u => (u._id || u.id).toString() === decoded.id.toString());
         if (found) {
-          user = { ...found };
+          user = { ...found, id: found._id || found.id };
           delete user.password;
         }
       }

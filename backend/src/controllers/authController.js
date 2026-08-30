@@ -1,10 +1,8 @@
-import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { User } from '../models/User.js';
+import { supabase } from '../config/supabase.js';
 import { generateToken } from '../utils/generateToken.js';
-import { memoryStore } from '../config/memoryStore.js';
 
-// @desc    Register a new user (Zero fake seeds - completely clean account)
+// @desc    Register a new user in Supabase
 // @route   POST /api/auth/register
 // @access  Public
 export const registerUser = async (req, res, next) => {
@@ -20,91 +18,70 @@ export const registerUser = async (req, res, next) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    if (mongoose.connection.readyState === 1) {
-      const userExists = await User.findOne({ email: cleanEmail });
-      if (userExists) {
-        return res.status(400).json({
-          success: false,
-          message: 'An account with this email already exists'
-        });
-      }
+    // Check if user already exists in Supabase
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', cleanEmail)
+      .maybeSingle();
 
-      const user = await User.create({
-        name,
-        email: cleanEmail,
-        password,
-        college: college || 'Campus Student',
-        year: year || 'Student',
-        monthlyBudget: Number(monthlyBudget) || 10000
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'An account with this email already exists'
       });
+    }
 
-      const token = generateToken(user._id);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-      return res.status(201).json({
-        success: true,
-        message: 'Account created successfully',
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          college: user.college,
-          year: user.year,
-          monthlyBudget: user.monthlyBudget,
-          avatar: user.avatar,
-          currency: user.currency,
-          token
-        }
-      });
-    } else {
-      const userExists = memoryStore.users.find(u => u.email === cleanEmail);
-      if (userExists) {
-        return res.status(400).json({
-          success: false,
-          message: 'An account with this email already exists'
-        });
-      }
-
-      const salt = bcrypt.genSaltSync(10);
-      const hashedPassword = bcrypt.hashSync(password, salt);
-      const newUser = {
-        _id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert({
         name,
         email: cleanEmail,
         password: hashedPassword,
         college: college || 'Campus Student',
         year: year || 'Student',
-        monthlyBudget: Number(monthlyBudget) || 10000,
+        monthly_budget: Number(monthlyBudget) || 10000,
         avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-        currency: '₹',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+        currency: '₹'
+      })
+      .select()
+      .single();
 
-      memoryStore.users.push(newUser);
-      const token = generateToken(newUser._id);
-
-      return res.status(201).json({
-        success: true,
-        message: 'Account created successfully',
-        data: {
-          _id: newUser._id,
-          name: newUser.name,
-          email: newUser.email,
-          college: newUser.college,
-          year: newUser.year,
-          monthlyBudget: newUser.monthlyBudget,
-          avatar: newUser.avatar,
-          currency: newUser.currency,
-          token
-        }
+    if (insertError || !newUser) {
+      console.error('[Register] Supabase insert error:', insertError?.message);
+      return res.status(500).json({
+        success: false,
+        message: insertError?.message || 'Failed to create user account'
       });
     }
+
+    const token = generateToken(newUser.id);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Account created successfully in Supabase',
+      data: {
+        _id: newUser.id,
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        college: newUser.college,
+        year: newUser.year,
+        monthlyBudget: Number(newUser.monthly_budget),
+        avatar: newUser.avatar,
+        currency: newUser.currency,
+        token
+      }
+    });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Authenticate user & get token
+// @desc    Authenticate user & get token via Supabase
 // @route   POST /api/auth/login
 // @access  Public
 export const loginUser = async (req, res, next) => {
@@ -120,77 +97,45 @@ export const loginUser = async (req, res, next) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    if (mongoose.connection.readyState === 1) {
-      const user = await User.findOne({ email: cleanEmail }).select('+password');
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', cleanEmail)
+      .maybeSingle();
 
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      const isMatch = await user.matchPassword(password);
-      if (!isMatch) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      const token = generateToken(user._id);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Logged in successfully',
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          college: user.college,
-          year: user.year,
-          monthlyBudget: user.monthlyBudget,
-          avatar: user.avatar,
-          currency: user.currency,
-          token
-        }
-      });
-    } else {
-      const user = memoryStore.users.find(u => u.email === cleanEmail);
-
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      const isMatch = bcrypt.compareSync(password, user.password);
-      if (!isMatch) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      const token = generateToken(user._id);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Logged in successfully',
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          college: user.college,
-          year: user.year,
-          monthlyBudget: user.monthlyBudget,
-          avatar: user.avatar,
-          currency: user.currency,
-          token
-        }
+    if (error || !user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
       });
     }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    const token = generateToken(user.id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged in successfully',
+      data: {
+        _id: user.id,
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        college: user.college,
+        year: user.year,
+        monthlyBudget: Number(user.monthly_budget),
+        avatar: user.avatar,
+        currency: user.currency,
+        token
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -204,7 +149,8 @@ export const getUserProfile = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: {
-        _id: req.user._id,
+        _id: req.user._id || req.user.id,
+        id: req.user._id || req.user.id,
         name: req.user.name,
         email: req.user.email,
         college: req.user.college,
@@ -219,58 +165,51 @@ export const getUserProfile = async (req, res, next) => {
   }
 };
 
-// @desc    Update user profile
+// @desc    Update user profile in Supabase
 // @route   PUT /api/auth/me
 // @access  Private
 export const updateUserProfile = async (req, res, next) => {
   try {
     const { name, college, year, monthlyBudget, avatar, currency } = req.body;
+    const userId = req.user._id || req.user.id;
 
-    if (mongoose.connection.readyState === 1) {
-      const user = await User.findById(req.user._id);
-      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    const updates = { updated_at: new Date() };
+    if (name !== undefined) updates.name = name;
+    if (college !== undefined) updates.college = college;
+    if (year !== undefined) updates.year = year;
+    if (monthlyBudget !== undefined) updates.monthly_budget = Number(monthlyBudget);
+    if (avatar !== undefined) updates.avatar = avatar;
+    if (currency !== undefined) updates.currency = currency;
 
-      if (name) user.name = name;
-      if (college) user.college = college;
-      if (year) user.year = year;
-      if (monthlyBudget !== undefined) user.monthlyBudget = Number(monthlyBudget);
-      if (avatar) user.avatar = avatar;
-      if (currency) user.currency = currency;
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
 
-      const updatedUser = await user.save();
-
-      return res.status(200).json({
-        success: true,
-        message: 'Profile updated successfully',
-        data: {
-          _id: updatedUser._id,
-          name: updatedUser.name,
-          email: updatedUser.email,
-          college: updatedUser.college,
-          year: updatedUser.year,
-          monthlyBudget: updatedUser.monthlyBudget,
-          avatar: updatedUser.avatar,
-          currency: updatedUser.currency
-        }
+    if (error || !updatedUser) {
+      return res.status(500).json({
+        success: false,
+        message: error?.message || 'Failed to update profile'
       });
-    } else {
-      const idx = memoryStore.users.findIndex(u => u._id.toString() === req.user._id.toString());
-      if (idx !== -1) {
-        if (name) memoryStore.users[idx].name = name;
-        if (college) memoryStore.users[idx].college = college;
-        if (year) memoryStore.users[idx].year = year;
-        if (monthlyBudget !== undefined) memoryStore.users[idx].monthlyBudget = Number(monthlyBudget);
-        if (avatar) memoryStore.users[idx].avatar = avatar;
-        if (currency) memoryStore.users[idx].currency = currency;
-
-        return res.status(200).json({
-          success: true,
-          message: 'Profile updated successfully',
-          data: memoryStore.users[idx]
-        });
-      }
-      return res.status(404).json({ success: false, message: 'User not found' });
     }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        _id: updatedUser.id,
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        college: updatedUser.college,
+        year: updatedUser.year,
+        monthlyBudget: Number(updatedUser.monthly_budget),
+        avatar: updatedUser.avatar,
+        currency: updatedUser.currency
+      }
+    });
   } catch (error) {
     next(error);
   }
