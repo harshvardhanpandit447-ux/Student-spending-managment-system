@@ -2,6 +2,75 @@ import bcrypt from 'bcryptjs';
 import { supabase } from '../config/supabase.js';
 import { generateToken } from '../utils/generateToken.js';
 
+// Auto-seed demo student account in Supabase if not existing
+const seedDemoUser = async (demoEmail, demoPassword) => {
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(demoPassword, salt);
+
+  const { data: user, error } = await supabase
+    .from('users')
+    .insert({
+      name: 'Aryan Sharma',
+      email: demoEmail,
+      password: hashedPassword,
+      college: 'IIT Delhi',
+      year: '3rd Year (B.Tech CSE)',
+      monthly_budget: 15000,
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+      currency: '₹'
+    })
+    .select()
+    .single();
+
+  if (user && !error) {
+    try {
+      // Seed starter budgets
+      await supabase.from('budgets').insert([
+        { user_id: user.id, category: 'Food & Dining', amount: 5000, spent: 1850, color: '#10B981' },
+        { user_id: user.id, category: 'Transport', amount: 2000, spent: 650, color: '#3B82F6' },
+        { user_id: user.id, category: 'Education & Books', amount: 3000, spent: 1200, color: '#8B5CF6' },
+        { user_id: user.id, category: 'Entertainment', amount: 2000, spent: 900, color: '#F59E0B' }
+      ]);
+
+      // Seed starter transactions
+      const now = new Date();
+      await supabase.from('transactions').insert([
+        { user_id: user.id, title: 'Campus Canteen Lunch', amount: 120, type: 'expense', category: 'Food & Dining', payment_method: 'UPI', date: now.toISOString() },
+        { user_id: user.id, title: 'Metro Smart Card Recharge', amount: 500, type: 'expense', category: 'Transport', payment_method: 'UPI', date: new Date(now.getTime() - 86400000).toISOString() },
+        { user_id: user.id, title: 'Freelance Web Design Stipend', amount: 8000, type: 'income', category: 'Freelance', payment_method: 'Bank Transfer', date: new Date(now.getTime() - 172800000).toISOString() },
+        { user_id: user.id, title: 'Coding Reference Book', amount: 650, type: 'expense', category: 'Education & Books', payment_method: 'UPI', date: new Date(now.getTime() - 259200000).toISOString() }
+      ]);
+
+      // Seed starter savings goals
+      await supabase.from('savings_goals').insert([
+        { user_id: user.id, name: 'MacBook Pro M3 Fund', target_amount: 90000, current_amount: 35000, deadline: 'December 2026', category: 'Tech & Hardware', icon: 'Laptop', color: '#8B5CF6' },
+        { user_id: user.id, name: 'Semester Break Trip', target_amount: 15000, current_amount: 8500, deadline: 'November 2026', category: 'Travel', icon: 'Plane', color: '#06B6D4' }
+      ]);
+
+      // Seed starter split bills
+      await supabase.from('split_expenses').insert([
+        {
+          user_id: user.id,
+          title: 'Weekend Pizza Party & Snacks',
+          total_amount: 1200,
+          category: 'Food & Dining',
+          paid_by: 'You',
+          status: 'partially_settled',
+          participants: [
+            { id: 'p1', name: 'Rohan (Hostel 204)', amount: 400, isPaid: true },
+            { id: 'p2', name: 'Aarav (CS Batchmate)', amount: 400, isPaid: false },
+            { id: 'p3', name: 'Tanmay', amount: 400, isPaid: true }
+          ]
+        }
+      ]);
+    } catch (seedErr) {
+      console.warn('[SeedDemoUser] Sub-resource seeding warning:', seedErr.message);
+    }
+  }
+
+  return user;
+};
+
 // @desc    Register a new user in Supabase
 // @route   POST /api/auth/register
 // @access  Public
@@ -12,14 +81,21 @@ export const registerUser = async (req, res, next) => {
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide name, email, and password'
+        message: 'Please provide full name, email, and password'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
       });
     }
 
     const cleanEmail = email.toLowerCase().trim();
 
     // Check if user already exists in Supabase
-    const { data: existingUser, error: checkError } = await supabase
+    const { data: existingUser } = await supabase
       .from('users')
       .select('id')
       .eq('email', cleanEmail)
@@ -28,7 +104,7 @@ export const registerUser = async (req, res, next) => {
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'An account with this email already exists'
+        message: 'An account with this email already exists. Please log in.'
       });
     }
 
@@ -38,11 +114,11 @@ export const registerUser = async (req, res, next) => {
     const { data: newUser, error: insertError } = await supabase
       .from('users')
       .insert({
-        name,
+        name: name.trim(),
         email: cleanEmail,
         password: hashedPassword,
-        college: college || 'Campus Student',
-        year: year || 'Student',
+        college: college ? college.trim() : 'Campus Student',
+        year: year ? year.trim() : 'Student',
         monthly_budget: Number(monthlyBudget) || 10000,
         avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
         currency: '₹'
@@ -62,7 +138,7 @@ export const registerUser = async (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Account created successfully in Supabase',
+      message: 'Account created successfully',
       data: {
         _id: newUser.id,
         id: newUser.id,
@@ -97,16 +173,21 @@ export const loginUser = async (req, res, next) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    const { data: user, error } = await supabase
+    let { data: user, error } = await supabase
       .from('users')
       .select('*')
       .eq('email', cleanEmail)
       .maybeSingle();
 
-    if (error || !user) {
+    // Auto-seed demo account if requested and not yet existing
+    if ((!user || error) && cleanEmail === 'aryan.sharma@iitd.ac.in') {
+      user = await seedDemoUser(cleanEmail, 'password123');
+    }
+
+    if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: 'Invalid email or password. Please check your credentials.'
       });
     }
 
@@ -114,7 +195,7 @@ export const loginUser = async (req, res, next) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: 'Invalid email or password. Please check your credentials.'
       });
     }
 
@@ -174,9 +255,9 @@ export const updateUserProfile = async (req, res, next) => {
     const userId = req.user._id || req.user.id;
 
     const updates = { updated_at: new Date() };
-    if (name !== undefined) updates.name = name;
-    if (college !== undefined) updates.college = college;
-    if (year !== undefined) updates.year = year;
+    if (name !== undefined) updates.name = name.trim();
+    if (college !== undefined) updates.college = college.trim();
+    if (year !== undefined) updates.year = year.trim();
     if (monthlyBudget !== undefined) updates.monthly_budget = Number(monthlyBudget);
     if (avatar !== undefined) updates.avatar = avatar;
     if (currency !== undefined) updates.currency = currency;

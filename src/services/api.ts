@@ -36,19 +36,26 @@ const getHeaders = (includeAuth = true) => {
 // Safe request wrapper with timeout and error handling
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...getHeaders(),
-      ...(options.headers || {})
-    }
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...getHeaders(),
+        ...(options.headers || {})
+      }
+    });
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.message || 'API request failed');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || `Request failed with status ${response.status}`);
+    }
+    return data;
+  } catch (err: any) {
+    if (err.message && !err.message.includes('fetch')) {
+      throw err;
+    }
+    throw new Error('Unable to connect to FinFlow API server. Please check your connection.');
   }
-  return data;
 }
 
 export const api = {

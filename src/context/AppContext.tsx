@@ -86,20 +86,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [u, txs, bgs, gls, notifs, splts] = await Promise.all([
-        api.getUserProfile(),
+      const token = api.getToken();
+      if (!token) {
+        setIsLoggedIn(false);
+        setUser(null);
+        setTransactions([]);
+        setBudgets([]);
+        setGoals([]);
+        setNotifications([]);
+        setSplits([]);
+        setLoading(false);
+        return;
+      }
+
+      const u = await api.getUserProfile();
+      if (!u) {
+        // Expired or invalid token
+        api.clearAuth();
+        setIsLoggedIn(false);
+        setUser(null);
+        setCurrentView('landing');
+        setLoading(false);
+        return;
+      }
+
+      setUser(u);
+      setIsLoggedIn(true);
+
+      const [txs, bgs, gls, notifs, splts] = await Promise.all([
         api.getTransactions(),
         api.getBudgets(),
         api.getSavingsGoals(),
         api.getNotifications(),
         api.getSplits()
       ]);
-      setUser(u);
-      setTransactions(txs);
-      setBudgets(bgs);
-      setGoals(gls);
-      setNotifications(notifs);
-      setSplits(splts);
+      setTransactions(txs || []);
+      setBudgets(bgs || []);
+      setGoals(gls || []);
+      setNotifications(notifs || []);
+      setSplits(splts || []);
     } catch (e) {
       console.error("Error loading FinFlow data:", e);
     } finally {
@@ -119,7 +144,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const login = async (email?: string, password?: string): Promise<boolean> => {
     try {
-      const targetEmail = email || 'aryan.sharma@iitd.ac.in';
+      const targetEmail = (email || 'aryan.sharma@iitd.ac.in').trim();
       const targetPassword = password || 'password123';
       const { user: loggedInUser } = await api.login(targetEmail, targetPassword);
       setUser(loggedInUser);
@@ -130,13 +155,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     } catch (err: any) {
       console.error('Login error:', err.message);
-      return false;
+      throw err;
     }
   };
 
   const register = async (formData: { name: string; email: string; password: string; college?: string; year?: string; monthlyBudget?: number }): Promise<boolean> => {
     try {
-      const { user: registeredUser } = await api.register(formData);
+      const { user: registeredUser } = await api.register({
+        ...formData,
+        email: formData.email.trim()
+      });
       setUser(registeredUser);
       setIsLoggedIn(true);
       setCurrentView('app');
@@ -145,7 +173,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     } catch (err: any) {
       console.error('Registration error:', err.message);
-      return false;
+      throw err;
     }
   };
 
@@ -153,6 +181,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     api.clearAuth();
     setIsLoggedIn(false);
     setUser(null);
+    setTransactions([]);
+    setBudgets([]);
+    setGoals([]);
+    setNotifications([]);
+    setSplits([]);
     setCurrentView('landing');
   };
 
