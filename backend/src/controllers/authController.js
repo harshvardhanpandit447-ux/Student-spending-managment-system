@@ -4,71 +4,87 @@ import { generateToken } from '../utils/generateToken.js';
 
 // Auto-seed demo student account in Supabase if not existing
 const seedDemoUser = async (demoEmail, demoPassword) => {
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(demoPassword, salt);
+  try {
+    const { data: existing } = await supabase
+      .from('users')
+      .select('*')
+      .ilike('email', demoEmail)
+      .maybeSingle();
 
-  const { data: user, error } = await supabase
-    .from('users')
-    .insert({
-      name: 'Aryan Sharma',
-      email: demoEmail,
-      password: hashedPassword,
-      college: 'IIT Delhi',
-      year: '3rd Year (B.Tech CSE)',
-      monthly_budget: 15000,
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      currency: '₹'
-    })
-    .select()
-    .single();
-
-  if (user && !error) {
-    try {
-      // Seed starter budgets
-      await supabase.from('budgets').insert([
-        { user_id: user.id, category: 'Food & Dining', amount: 5000, spent: 1850, color: '#10B981' },
-        { user_id: user.id, category: 'Transport', amount: 2000, spent: 650, color: '#3B82F6' },
-        { user_id: user.id, category: 'Education & Books', amount: 3000, spent: 1200, color: '#8B5CF6' },
-        { user_id: user.id, category: 'Entertainment', amount: 2000, spent: 900, color: '#F59E0B' }
-      ]);
-
-      // Seed starter transactions
-      const now = new Date();
-      await supabase.from('transactions').insert([
-        { user_id: user.id, title: 'Campus Canteen Lunch', amount: 120, type: 'expense', category: 'Food & Dining', payment_method: 'UPI', date: now.toISOString() },
-        { user_id: user.id, title: 'Metro Smart Card Recharge', amount: 500, type: 'expense', category: 'Transport', payment_method: 'UPI', date: new Date(now.getTime() - 86400000).toISOString() },
-        { user_id: user.id, title: 'Freelance Web Design Stipend', amount: 8000, type: 'income', category: 'Freelance', payment_method: 'Bank Transfer', date: new Date(now.getTime() - 172800000).toISOString() },
-        { user_id: user.id, title: 'Coding Reference Book', amount: 650, type: 'expense', category: 'Education & Books', payment_method: 'UPI', date: new Date(now.getTime() - 259200000).toISOString() }
-      ]);
-
-      // Seed starter savings goals
-      await supabase.from('savings_goals').insert([
-        { user_id: user.id, name: 'MacBook Pro M3 Fund', target_amount: 90000, current_amount: 35000, deadline: 'December 2026', category: 'Tech & Hardware', icon: 'Laptop', color: '#8B5CF6' },
-        { user_id: user.id, name: 'Semester Break Trip', target_amount: 15000, current_amount: 8500, deadline: 'November 2026', category: 'Travel', icon: 'Plane', color: '#06B6D4' }
-      ]);
-
-      // Seed starter split bills
-      await supabase.from('split_expenses').insert([
-        {
-          user_id: user.id,
-          title: 'Weekend Pizza Party & Snacks',
-          total_amount: 1200,
-          category: 'Food & Dining',
-          paid_by: 'You',
-          status: 'partially_settled',
-          participants: [
-            { id: 'p1', name: 'Rohan (Hostel 204)', amount: 400, isPaid: true },
-            { id: 'p2', name: 'Aarav (CS Batchmate)', amount: 400, isPaid: false },
-            { id: 'p3', name: 'Tanmay', amount: 400, isPaid: true }
-          ]
-        }
-      ]);
-    } catch (seedErr) {
-      console.warn('[SeedDemoUser] Sub-resource seeding warning:', seedErr.message);
+    if (existing) {
+      return existing;
     }
-  }
 
-  return user;
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(demoPassword, salt);
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .insert({
+        name: 'Aryan Sharma',
+        email: demoEmail.toLowerCase().trim(),
+        password: hashedPassword,
+        college: 'IIT Delhi',
+        year: '3rd Year (B.Tech CSE)',
+        monthly_budget: 15000,
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+        currency: '₹'
+      })
+      .select()
+      .single();
+
+    if (user && !error) {
+      try {
+        // Seed starter budgets
+        await supabase.from('budgets').insert([
+          { user_id: user.id, category: 'Food & Dining', amount: 5000, spent: 1850, color: '#10B981' },
+          { user_id: user.id, category: 'Transport', amount: 2000, spent: 650, color: '#3B82F6' },
+          { user_id: user.id, category: 'Education & Books', amount: 3000, spent: 1200, color: '#8B5CF6' },
+          { user_id: user.id, category: 'Entertainment', amount: 2000, spent: 900, color: '#F59E0B' }
+        ]);
+
+        // Seed starter transactions
+        const now = new Date();
+        await supabase.from('transactions').insert([
+          { user_id: user.id, title: 'Campus Canteen Lunch', amount: 120, type: 'expense', category: 'Food & Dining', payment_method: 'UPI', date: now.toISOString() },
+          { user_id: user.id, title: 'Metro Smart Card Recharge', amount: 500, type: 'expense', category: 'Transport', payment_method: 'UPI', date: new Date(now.getTime() - 86400000).toISOString() },
+          { user_id: user.id, title: 'Freelance Web Design Stipend', amount: 8000, type: 'income', category: 'Freelance', payment_method: 'Bank Transfer', date: new Date(now.getTime() - 172800000).toISOString() },
+          { user_id: user.id, title: 'Coding Reference Book', amount: 650, type: 'expense', category: 'Education & Books', payment_method: 'UPI', date: new Date(now.getTime() - 259200000).toISOString() }
+        ]);
+
+        // Seed starter savings goals
+        await supabase.from('savings_goals').insert([
+          { user_id: user.id, name: 'MacBook Pro M3 Fund', target_amount: 90000, current_amount: 35000, deadline: 'December 2026', category: 'Tech & Hardware', icon: 'Laptop', color: '#8B5CF6' },
+          { user_id: user.id, name: 'Semester Break Trip', target_amount: 15000, current_amount: 8500, deadline: 'November 2026', category: 'Travel', icon: 'Plane', color: '#06B6D4' }
+        ]);
+
+        // Seed starter split bills
+        await supabase.from('split_expenses').insert([
+          {
+            user_id: user.id,
+            title: 'Weekend Pizza Party & Snacks',
+            total_amount: 1200,
+            category: 'Food & Dining',
+            paid_by: 'You',
+            status: 'partially_settled',
+            participants: [
+              { id: 'p1', name: 'Rohan (Hostel 204)', amount: 400, isPaid: true },
+              { id: 'p2', name: 'Aarav (CS Batchmate)', amount: 400, isPaid: false },
+              { id: 'p3', name: 'Tanmay', amount: 400, isPaid: true }
+            ]
+          }
+        ]);
+      } catch (seedErr) {
+        console.warn('[SeedDemoUser] Sub-resource seeding warning:', seedErr.message);
+      }
+      return user;
+    }
+
+    return existing || null;
+  } catch (err) {
+    console.error('[SeedDemoUser] Error:', err.message);
+    return null;
+  }
 };
 
 // @desc    Register a new user in Supabase
@@ -94,11 +110,11 @@ export const registerUser = async (req, res, next) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    // Check if user already exists in Supabase
+    // Check if user already exists in Supabase (case-insensitive)
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
-      .eq('email', cleanEmail)
+      .ilike('email', cleanEmail)
       .maybeSingle();
 
     if (existingUser) {
@@ -110,6 +126,7 @@ export const registerUser = async (req, res, next) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    const budgetLimit = Number(monthlyBudget) || 10000;
 
     const { data: newUser, error: insertError } = await supabase
       .from('users')
@@ -119,7 +136,7 @@ export const registerUser = async (req, res, next) => {
         password: hashedPassword,
         college: college ? college.trim() : 'Campus Student',
         year: year ? year.trim() : 'Student',
-        monthly_budget: Number(monthlyBudget) || 10000,
+        monthly_budget: budgetLimit,
         avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
         currency: '₹'
       })
@@ -132,6 +149,18 @@ export const registerUser = async (req, res, next) => {
         success: false,
         message: insertError?.message || 'Failed to create user account'
       });
+    }
+
+    // Seed default starter budgets for the new student account
+    try {
+      await supabase.from('budgets').insert([
+        { user_id: newUser.id, category: 'Food & Dining', amount: Math.round(budgetLimit * 0.4), spent: 0, color: '#10B981' },
+        { user_id: newUser.id, category: 'Transport', amount: Math.round(budgetLimit * 0.15), spent: 0, color: '#3B82F6' },
+        { user_id: newUser.id, category: 'Education & Books', amount: Math.round(budgetLimit * 0.2), spent: 0, color: '#8B5CF6' },
+        { user_id: newUser.id, category: 'Entertainment', amount: Math.round(budgetLimit * 0.15), spent: 0, color: '#F59E0B' }
+      ]);
+    } catch (e) {
+      console.warn('[Register] Starter budget seed note:', e.message);
     }
 
     const token = generateToken(newUser.id);
@@ -173,10 +202,11 @@ export const loginUser = async (req, res, next) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
+    // Query with case-insensitivity using ilike
     let { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('email', cleanEmail)
+      .ilike('email', cleanEmail)
       .maybeSingle();
 
     // Auto-seed demo account if requested and not yet existing

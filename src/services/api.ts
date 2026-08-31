@@ -18,7 +18,7 @@ try {
   localStorage.removeItem('finflow_transactions_v1');
   localStorage.removeItem('finflow_splits_v1');
   localStorage.removeItem('finflow_notifications_v1');
-} catch (e) {}
+} catch (_) {}
 
 const getHeaders = (includeAuth = true) => {
   const headers: Record<string, string> = {
@@ -47,6 +47,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (response.status === 401) {
+        // Clear expired or invalid credentials
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+      }
       throw new Error(data.message || `Request failed with status ${response.status}`);
     }
     return data;
@@ -106,11 +111,8 @@ export const api = {
       const res: any = await request('/auth/me');
       localStorage.setItem(USER_KEY, JSON.stringify(res.data));
       return res.data;
-    } catch (err) {
-      const saved = localStorage.getItem(USER_KEY);
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
-      }
+    } catch (_) {
+      this.clearAuth();
       return null;
     }
   },
